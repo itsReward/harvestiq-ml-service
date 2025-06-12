@@ -112,7 +112,7 @@ class FactorImportance(BaseModel):
     """Factor importance for explainability - matches Kotlin FactorImportance"""
     factor: str
     importance: float = Field(..., ge=0.0, le=1.0)
-    impact: str = Field(..., regex="^(POSITIVE|NEGATIVE|NEUTRAL)$")
+    impact: str = Field(..., pattern="^(POSITIVE|NEGATIVE|NEUTRAL)$")
     description: Optional[str] = None
 
 class PredictionResponse(BaseModel):
