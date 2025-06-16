@@ -624,6 +624,9 @@ class EnsembleYieldPredictor:
 
     def save_model(self, save_path: Path) -> None:
         """Save the trained model"""
+        if isinstance(save_path, str):
+            save_path = Path(save_path)
+
         save_path.mkdir(parents=True, exist_ok=True)
 
         # Save sklearn models

@@ -366,6 +366,133 @@ class ModelTrainer:
 
         return best_params
 
+    # Add this method to the ModelTrainer class in models/model_training.py
+
+    def train_from_data(self, training_data: List[Dict]) -> EnsembleYieldPredictor:
+        """
+        Train model directly from data list (simplified version)
+        """
+        logger.info("Starting simplified model training pipeline...")
+
+        # Convert list of dicts to DataFrame for easier processing
+        df = pd.DataFrame(training_data)
+        logger.info(f"Loaded {len(df)} training samples")
+
+        # Create a simple feature set from available data
+        features = []
+        target = []
+
+        for record in training_data:
+            try:
+                # Extract basic features
+                feature_dict = {
+                    'maturity_days': record.get('maturity_days', 120),
+                    'drought_resistance': 1 if record.get('drought_resistance', False) else 0,
+                    'field_size_hectares': record.get('field_size_hectares', 1.0),
+                    'fertilizer_applied': 1 if record.get('fertilizer_applied', False) else 0,
+                    'irrigation_used': 1 if record.get('irrigation_used', False) else 0,
+                    'ph_level': record.get('ph_level', 6.5),
+                    'organic_matter_percentage': record.get('organic_matter_percentage', 2.5),
+                    'nitrogen_content': record.get('nitrogen_content', 0.2),
+                    'phosphorus_content': record.get('phosphorus_content', 30),
+                    'potassium_content': record.get('potassium_content', 200),
+                    'avg_temperature': record.get('avg_temperature', 25),
+                    'total_rainfall': record.get('total_rainfall', 500),
+                    'avg_humidity': record.get('avg_humidity', 70),
+                    'elevation': record.get('elevation', 1000),
+                    'plant_density_per_hectare': record.get('plant_density_per_hectare', 30000)
+                }
+
+                # Encode soil type
+                soil_types = {'Sandy loam': 1, 'Clay loam': 2, 'Loam': 3, 'Sandy clay': 4, 'Silt loam': 5}
+                soil_type = record.get('soil_type', 'Loam')
+                feature_dict['soil_type_encoded'] = soil_types.get(soil_type, 3)
+
+                features.append(feature_dict)
+                target.append(record['actual_yield_tons_per_hectare'])
+
+            except KeyError as e:
+                logger.warning(f"Skipping record due to missing field: {e}")
+                continue
+
+        if not features:
+            raise ValueError("No valid training records found")
+
+        # Create DataFrames
+        X = pd.DataFrame(features)
+        y = pd.Series(target)
+
+        logger.info(f"Created {len(X.columns)} features from {len(X)} samples")
+        logger.info(f"Feature columns: {list(X.columns)}")
+        logger.info(f"Target range: {y.min():.2f} - {y.max():.2f} tons/hectare")
+
+        # Split data
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
+
+        # Create and train ensemble model
+        ensemble = EnsembleYieldPredictor()
+
+        # Prepare training data
+        training_df = pd.concat([X_train, y_train.rename('yield')], axis=1)
+
+        # Train the model
+        metrics = ensemble.train(training_df)
+
+        # Evaluate on test set
+        test_df = pd.concat([X_test, y_test.rename('yield')], axis=1)
+        test_predictions = []
+
+        for idx, row in X_test.iterrows():
+            # Create a mock prediction request for the ensemble model
+            pred_dict = row.to_dict()
+            pred_dict['yield'] = y_test.loc[idx]  # Add target for consistency
+
+            # Simple prediction (this would need to be adapted based on ensemble implementation)
+            try:
+                # For now, use a simple random forest prediction
+                if hasattr(ensemble, 'models') and 'random_forest' in ensemble.models:
+                    rf_model = ensemble.models['random_forest']
+                    if hasattr(ensemble, 'scalers') and 'feature_scaler' in ensemble.scalers:
+                        scaler = ensemble.scalers['feature_scaler']
+                        row_df = pd.DataFrame([row], columns=X_test.columns)
+                        X_scaled = scaler.transform(row_df)
+                        prediction = rf_model.predict(X_scaled)[0]
+                    else:
+                        row_df = pd.DataFrame([row], columns=X_test.columns)
+                        prediction = rf_model.predict(row_df)[0]
+                else:
+                    prediction = y_train.mean()  # Fallback to mean
+
+                test_predictions.append(prediction)
+            except Exception as e:
+                logger.warning(f"Prediction failed for row {idx}: {e}")
+                test_predictions.append(y_train.mean())
+
+        # Calculate test metrics
+        test_predictions = np.array(test_predictions)
+        test_mae = mean_absolute_error(y_test, test_predictions)
+        test_rmse = np.sqrt(mean_squared_error(y_test, test_predictions))
+        test_r2 = r2_score(y_test, test_predictions)
+
+        logger.info(f"Test Results:")
+        logger.info(f"  MAE: {test_mae:.4f}")
+        logger.info(f"  RMSE: {test_rmse:.4f}")
+        logger.info(f"  R²: {test_r2:.4f}")
+
+        # Store metrics in the ensemble model
+        ensemble.metrics = {
+            'mae': test_mae,
+            'rmse': test_rmse,
+            'r2_score': test_r2
+        }
+
+        # Store training date
+        ensemble.training_date = datetime.now().isoformat()
+
+        return ensemble
+
     def _train_ensemble_model(self, X_train: pd.DataFrame, y_train: pd.Series,
                             X_val: pd.DataFrame, y_val: pd.Series,
                             X_test: pd.DataFrame, y_test: pd.Series) -> EnsembleYieldPredictor:

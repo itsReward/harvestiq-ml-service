@@ -61,51 +61,39 @@ class WeatherDataRequest(BaseModel):
         return v
 
 class MaizeVarietyInfo(BaseModel):
-    """Maize variety characteristics"""
+    """Maize variety information"""
     id: int
     name: str
-    maturity_days: int
-    optimal_temperature_min: Optional[float] = None
-    optimal_temperature_max: Optional[float] = None
+    maturity_days: int = Field(..., ge=60, le=200)
     drought_resistance: bool = False
-    disease_resistance: Optional[str] = None
+    yield_potential: Optional[float] = None
     description: Optional[str] = None
-
-    @validator('maturity_days')
-    def validate_maturity_days(cls, v):
-        if v <= 0 or v > 300:
-            raise ValueError('Maturity days must be between 1 and 300')
-        return v
 
 class PlantingSessionInfo(BaseModel):
     """Planting session information"""
     planting_date: date
     expected_harvest_date: Optional[date] = None
-    seed_rate_kg_per_hectare: Optional[float] = None
-    row_spacing_cm: Optional[int] = None
+    field_size_hectares: float = Field(..., gt=0)
+    plant_density_per_hectare: Optional[int] = None
+    row_spacing_cm: Optional[float] = None
+    plant_spacing_cm: Optional[float] = None
+    fertilizer_applied: Optional[bool] = None
     fertilizer_type: Optional[str] = None
-    fertilizer_amount_kg_per_hectare: Optional[float] = None
-    irrigation_method: Optional[str] = None
-    notes: Optional[str] = None
+    irrigation_used: Optional[bool] = None
 
 class PredictionRequest(BaseModel):
-    """Request for yield prediction - matches Kotlin PredictionRequest"""
-    farm_id: int
-    planting_session_id: int
-    maize_variety: MaizeVarietyInfo
+    """Main prediction request matching Kotlin YieldPredictionRequest"""
+    farm_id: int = Field(..., gt=0)
+    variety_info: MaizeVarietyInfo
     planting_session: PlantingSessionInfo
-    farm_location: Optional[FarmLocationData] = None
     soil_data: Optional[SoilDataRequest] = None
     weather_data: List[WeatherDataRequest] = []
-    current_date: date = Field(default_factory=date.today)
-    include_soil_data: bool = True
-    include_weather_data: bool = True
-    include_historical_yields: bool = True
+    location_data: Optional[FarmLocationData] = None
 
     @validator('weather_data')
     def validate_weather_data(cls, v):
         if len(v) > 365:
-            raise ValueError('Too many weather data points (max 365)')
+            raise ValueError('Weather data cannot exceed 365 days')
         return v
 
 class FactorImportance(BaseModel):
@@ -129,7 +117,7 @@ class PredictionResponse(BaseModel):
 class ModelTrainingRequest(BaseModel):
     """Request for model retraining"""
     training_data_path: str
-    model_config: Dict[str, Any] = {}
+    training_config: Dict[str, Any] = {}  # Renamed from model_config to avoid conflict
     validation_split: float = Field(default=0.2, ge=0.1, le=0.4)
     cross_validation_folds: int = Field(default=5, ge=3, le=10)
     performance_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
